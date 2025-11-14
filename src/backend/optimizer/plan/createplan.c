@@ -47,6 +47,51 @@
 #include "tcop/tcopprot.h"
 #include "utils/lsyscache.h"
 
+#include "nodes/print.h"
+#include "lib/stringinfo.h"
+#include "parser/parsetree.h"
+#include "optimizer/pathnode.h"
+#include "catalog/pg_am.h"
+#include "utils/rel.h"
+#include "access/relation.h"
+
+/*
+ * =================================================================
+ * [DEBUG/문태주] 로그 출력을 위한 함수
+ * relids: {1,4} 비트맵을 받아서
+ * "l + m" 형식의 문자열로 반환
+ * =================================================================
+ */
+static char *
+get_rel_aliases_string(PlannerInfo *root, Relids relids)
+{
+	StringInfoData buf;
+	int relid = -1;
+	bool first = true;
+
+	initStringInfo(&buf); // 버퍼 초기화
+
+	while ((relid = bms_next_member(relids, relid)) >= 0) // 릴레이션 아이디를 하나씩 꺼내서
+	{
+		if (relid > 0 && relid < root->simple_rel_array_size)
+		{
+			RangeTblEntry *rte = rt_fetch(relid, root->parse->rtable);
+			if (rte && rte->eref)
+			{
+				if (!first)
+					appendStringInfoString(&buf, " + ");			// l + m..
+				appendStringInfoString(&buf, rte->eref->aliasname); // alisname = "l"
+				first = false;
+			}
+		}
+	}
+
+	if (buf.len == 0)
+		appendStringInfoString(&buf, "UNKNOWN"); // 조인하는 테이블을 알 수 없을때
+
+	return buf.data;
+}
+
 /*
  * Flag bits that can appear in the flags argument of create_plan_recurse().
  * These can be OR-ed together.
@@ -2858,7 +2903,7 @@ create_indexscan_plan(PlannerInfo *root,
 	ListCell *l;
 
 	RangeTblEntry *rte = planner_rt_fetch(best_path->path.parent->relid, root);
-	ereport(WARNING, (errmsg("[DEBUG/문태주] 인덱스 스캔 [%s]", rte->eref->aliasname)));
+	ereport(WARNING, (errmsg("[DEBUG/문태주] B+tree 인덱스 스캔 [%s]", rte->eref->aliasname)));
 
 	/* it should be a base rel... */
 	Assert(baserelid > 0);
@@ -4203,7 +4248,18 @@ create_nestloop_plan(PlannerInfo *root,
 	Relids saveOuterRels = root->curOuterRels;
 	ListCell *lc;
 
-	ereport(WARNING, (errmsg("[DEBUG/문태주] Nested Loop Plan 구성중...")));
+	{
+		// OUTER_JOIN_피연산자
+		char *outer_names = get_rel_aliases_string(root, best_path->jpath.outerjoinpath->parent->relids);
+		// INNER_JOIN 피연산자
+		char *inner_names = get_rel_aliases_string(root, best_path->jpath.innerjoinpath->parent->relids);
+
+		ereport(WARNING, (errmsg("[DEBUG/문태주] Nested Loop Join: Outer(%s) + Inner(%s)",
+								 outer_names, inner_names)));
+
+		pfree(outer_names);
+		pfree(inner_names);
+	}
 
 	/*
 	 * If the inner path is parameterized by the topmost parent of the outer
@@ -4714,7 +4770,18 @@ create_hashjoin_plan(PlannerInfo *root,
 	bool skewInherit = false;
 	ListCell *lc;
 
-	ereport(WARNING, (errmsg("[DEBUG/문태주] Hash Join Plan 구성중...")));
+	{
+		// OUTER_JOIN_피연산자
+		char *outer_names = get_rel_aliases_string(root, best_path->jpath.outerjoinpath->parent->relids);
+		// INNER_JOIN 피연산자
+		char *inner_names = get_rel_aliases_string(root, best_path->jpath.innerjoinpath->parent->relids);
+
+		ereport(WARNING, (errmsg("[DEBUG/문태주] Hash Join: Outer(%s) + Inner(%s)",
+								 outer_names, inner_names)));
+
+		pfree(outer_names);
+		pfree(inner_names);
+	}
 
 	/*
 	 * HashJoin can project, so we don't have to demand exact tlists from the

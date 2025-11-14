@@ -3,6 +3,7 @@
         "string": "c",
         "bitmapset.h": "c",
         "nodetags.h": "c",
-        "limits.h": "c"
+        "limits.h": "c",
+        "print.h": "c"
     }
 }

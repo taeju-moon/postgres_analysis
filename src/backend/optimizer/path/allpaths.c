@@ -167,6 +167,43 @@ static void remove_unused_subquery_outputs(Query *subquery, RelOptInfo *rel,
 										   Bitmapset *extra_used_attrs);
 
 /*
+ * =================================================================
+ * [DEBUG/문태주] 로그 출력을 위한 함수
+ * relids: {1,4} 비트맵을 받아서
+ * "l + m" 형식의 문자열로 반환
+ * =================================================================
+ */
+static char *
+get_rel_aliases_string(PlannerInfo *root, Relids relids)
+{
+	StringInfoData buf;
+	int relid = -1;
+	bool first = true;
+
+	initStringInfo(&buf); // 버퍼 초기화
+
+	while ((relid = bms_next_member(relids, relid)) >= 0) // 릴레이션 아이디를 하나씩 꺼내서
+	{
+		if (relid > 0 && relid < root->simple_rel_array_size)
+		{
+			RangeTblEntry *rte = rt_fetch(relid, root->parse->rtable);
+			if (rte && rte->eref)
+			{
+				if (!first)
+					appendStringInfoString(&buf, " + ");			// l + m..
+				appendStringInfoString(&buf, rte->eref->aliasname); // alisname = "l"
+				first = false;
+			}
+		}
+	}
+
+	if (buf.len == 0)
+		appendStringInfoString(&buf, "UNKNOWN"); // 조인하는 테이블을 알 수 없을때
+
+	return buf.data;
+}
+
+/*
  * make_one_rel
  *	  Finds all possible access paths for executing a query, returning a
  *	  single rel that represents the join of all base rels in the query.
@@ -3977,29 +4014,12 @@ standard_join_search(PlannerInfo *root, int levels_needed, List *initial_rels)
 				Path *cheapest_path = rel->cheapest_total_path;
 				NodeTag ptype = cheapest_path->pathtype;
 
-				StringInfoData join_name_buf;
-				int relid = -1;
-				bool first = true;
-				initStringInfo(&join_name_buf);
-				while ((relid = bms_next_member(rel->relids, relid)) >= 0)
-				{
-					if (relid > 0 && relid < root->simple_rel_array_size)
-					{
-						RangeTblEntry *rte = rt_fetch(relid, root->parse->rtable);
-						if (rte && rte->eref)
-						{
-							if (!first)
-								appendStringInfoString(&join_name_buf, " + ");
-							appendStringInfoString(&join_name_buf, rte->eref->aliasname);
-							first = false;
-						}
-					}
-				}
+				char *join_name = get_rel_aliases_string(root, rel->relids);
 
 				ereport(WARNING,
 						(errmsg("[DEBUG/문태주] (Lev %d) 경로 (%s): 비용=%.2f",
 								lev,
-								join_name_buf.data,
+								join_name,
 								cheapest_path->total_cost)));
 			}
 
