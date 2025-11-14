@@ -640,6 +640,16 @@ set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	set_cheapest(rel);
 
 	/*
+	 * [DEBUG/문태주] TASK 4
+	 * m (Members) 테이블은 'VIP' 조건으로 인해 먼저 계산하는 이점이 있을 걸로 예상하여
+	 * 옵티마이저가 추정한 비용을 임의로 90% 할인 적용함
+	 */
+	if (strcmp(rte->eref->aliasname, "m") == 0)
+	{
+		rel->cheapest_total_path->total_cost = rel->cheapest_total_path->total_cost * 0.1;
+	}
+
+	/*
 	 * =================================================================
 	 * [DEBUG/문태주] TASK 3 - 로그 위치 #1 (Level 1: 단일 테이블)
 	 * =================================================================
